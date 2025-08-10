@@ -1,3 +1,7 @@
+#todo:
+#add crosshair to right-graph
+#-make it such that either of them will update the infolabel
+
 import pygsheets
 import os
 import numpy as np
@@ -84,7 +88,7 @@ def movingAvg(data,window):
                 movAvgData.append(np.nan)
     return np.array(movAvgData)
 
-class visualizerGUI(QWidget):
+class chronological_plotter(QWidget):
     def __init__(self,styles={"font-family":"Times New Roman"}):
         crosshair_color="#ff00ff"
         self.right_y_color="k"
@@ -92,8 +96,6 @@ class visualizerGUI(QWidget):
         self.left_y_color="b"
         self.left_moving_average_color="g"
         super().__init__()
-        # self.setWindowTitle('Body-metric log visualizer')
-        # self.setWindowIcon(QIcon('scale.png'))
         self.figure=PlotWidget()
         self.legend=self.figure.addLegend(labelTextColor=(0,0,0))
         self.styles=styles
@@ -130,10 +132,15 @@ class visualizerGUI(QWidget):
             self.right_y_data_picker.addItem(label)
         self.left_y_data_picker.addItem('')
         self.right_y_data_picker.addItem('')
-        info_layout=QVBoxLayout()
-        info_layout.addWidget(self.infoLabel)
-        info_layout.addWidget(self.left_y_data_picker)
-        info_layout.addWidget(self.right_y_data_picker)
+        picker_layout=QHBoxLayout()
+        picker_layout.setSpacing(2)
+        picker_layout.addStretch(1)
+        picker_layout.addWidget(QLabel('Left y-axis:'))
+        picker_layout.addWidget(self.left_y_data_picker)
+        picker_layout.addStretch(1)
+        picker_layout.addWidget(QLabel('Right y-axis:'))
+        picker_layout.addWidget(self.right_y_data_picker)
+        picker_layout.addStretch(1)
         
         topTicks=[] 
         yCounter=1
@@ -146,23 +153,15 @@ class visualizerGUI(QWidget):
         self.figure.getAxis('top').setTicks([topTicks,[]])
         self.figure.getAxis('right').setTicks('')
         self.figure.setBackground(self.palette().color(QPalette.ColorRole.Window))
+        
+        left_layout=QVBoxLayout()
+        left_layout.addWidget(self.figure)
+        left_layout.addLayout(picker_layout)
         mainGraphLayout=QHBoxLayout()
-        mainGraphLayout.addWidget(self.figure,stretch=4)
-        mainGraphLayout.addLayout(info_layout,stretch=1)
+        mainGraphLayout.addLayout(left_layout,stretch=4)
+        mainGraphLayout.addWidget(self.infoLabel,stretch=1)
         layout=QVBoxLayout()
         layout.addLayout(mainGraphLayout)
-        # ctrlLayout=QHBoxLayout()
-        # self.startLineEdit=QLineEdit()
-        # self.endLineEdit=QLineEdit()
-        # self.movAvgWindowLineEdit=QLineEdit()
-        # self.movAvgWindowLineEdit.setText('7')
-        # ctrlLayout.addWidget(QLabel('From, Year,Month,Day:'))
-        # ctrlLayout.addWidget(self.startLineEdit)
-        # ctrlLayout.addWidget(QLabel('Until, Year,Month,Day:'))
-        # ctrlLayout.addWidget(self.endLineEdit)
-        # ctrlLayout.addWidget(QLabel('Avg. window:'))
-        # ctrlLayout.addWidget(self.movAvgWindowLineEdit)
-        # layout.addLayout(ctrlLayout)
         self.setLayout(layout)
 
         # Add crosshair line
@@ -190,17 +189,12 @@ class visualizerGUI(QWidget):
                                                        'moving_average_plot':None}}
         self.left_y_data_picker.currentTextChanged.connect(self.change_y_data)
         self.right_y_data_picker.currentTextChanged.connect(self.change_y_data)
+        #the 1st added item is set to current, change to update moving averages and then change back
         self.left_y_data_picker.setCurrentIndex(1)
+        self.left_y_data_picker.setCurrentIndex(0)
         self.right_y_data_picker.setCurrentIndex(len(y_data_dict))
         self.startIndex=0
         self.endIndex=len(dates_formatted)
-        # self.startLineEdit.returnPressed.connect(self.updateStart)
-        # self.endLineEdit.returnPressed.connect(self.updateEnd)
-        # self.movAvgWindowLineEdit.returnPressed.connect(self.updateMovAg)
-        # self.startLineEdit.setText(dates_formatted[0])
-        # self.endLineEdit.setText(dates_formatted[-1])    
-        # self.startLineEdit.returnPressed.emit()
-        # self.endLineEdit.returnPressed.emit()
     def update_views(self):
         self.right_y_axis_graph.setGeometry(self.left_y_axis_graph.sceneBoundingRect())
         self.right_y_axis_graph.linkedViewChanged(self.left_y_axis_graph, self.right_y_axis_graph.XAxis)
@@ -234,7 +228,6 @@ class visualizerGUI(QWidget):
             y_str=''
             for label,y_data in y_data_dict.items():
                 y_metric,y_unit=label.split(' [')
-                # y_metric_moving_avg=movingAvg(y_data,self.moving_avg_window)[xIndex]
                 y_metric_moving_avg=moving_average_dict[label][xIndex]
                 if not np.isnan(y_data[xIndex]):
                     y_str+=f"{y_metric}: {np.round(y_data[xIndex],decimals=1)} (Avg. {np.round(y_metric_moving_avg,decimals=1)}) {y_unit.strip(']')}\n"
@@ -246,11 +239,9 @@ class visualizerGUI(QWidget):
             self.infoLabel.setText(f"{dates_formatted[xIndex]}\n{y_str}{info_str}")
 
     def updateStart(self,startStr):
-        # startStr=self.startLineEdit.text()
         self.startIndex=dates_formatted.index(startStr)
         self.figure.setXRange(self.startIndex,self.endIndex,padding=0.002)
     def updateEnd(self,endStr):
-        # endStr=self.endLineEdit.text()
         self.endIndex=dates_formatted.index(endStr)
         self.figure.setXRange(self.startIndex,self.endIndex,padding=0.002)
     def change_y_data(self,text):
@@ -326,7 +317,7 @@ class mainWindow(QWidget):
         ctrlLayout.addWidget(self.endLineEdit)
         ctrlLayout.addWidget(QLabel('Avg. window:'))
         ctrlLayout.addWidget(self.movAvgWindowLineEdit)
-        self.history_plot_widget=visualizerGUI(styles)
+        self.history_plot_widget=chronological_plotter(styles)
         layout=QVBoxLayout()
         tabWidget=QTabWidget()
         tabWidget.addTab(self.history_plot_widget,'History')
@@ -366,7 +357,7 @@ class mainWindow(QWidget):
 if __name__=='__main__':
     app=QApplication([])
     app.setFont(QFont('Times New Roman'))
-    # gui=visualizerGUI()
+    # gui=chronological_plotter()
     gui=mainWindow()
     gui.show()
     app.exec()

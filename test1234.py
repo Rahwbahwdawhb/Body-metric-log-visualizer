@@ -1,6 +1,7 @@
 #todo:
-#add crosshair to right-graph
-#-make it such that either of them will update the infolabel
+#for days with no data, catch:
+# d:\Python\Projects\weightTrackVisualizer\projVenv\lib\site-packages\pyqtgraph\graphicsItems\ScatterPlotItem.py:871: RuntimeWarning: All-NaN slice encountered
+#   self.bounds[ax] = (np.nanmin(d) - self._maxSpotWidth*0.7072, np.nanmax(d) + self._maxSpotWidth*0.7072)
 
 import pygsheets
 import os
@@ -165,12 +166,18 @@ class chronological_plotter(QWidget):
         self.setLayout(layout)
 
         # Add crosshair line
-        self.dataPointCircle_asScatterPlot=ScatterPlotItem(size=5,pen=crosshair_color,brush=crosshair_color)
-        self.crosshair_v = InfiniteLine(angle=90, movable=False,pen=crosshair_color)
-        self.figure.addItem(self.crosshair_v, ignoreBounds=True)
-        self.figure.addItem(self.dataPointCircle_asScatterPlot)
+        self.dataPointCircle_left=ScatterPlotItem(size=5,pen=crosshair_color,brush=crosshair_color)
+        self.dataPointCircle_left.setZValue(1000)
+        self.crosshair_v_left = InfiniteLine(angle=90, movable=False,pen=crosshair_color)
+        self.left_y_axis_graph.addItem(self.crosshair_v_left, ignoreBounds=True)
+        self.left_y_axis_graph.addItem(self.dataPointCircle_left)        
+        self.dataPointCircle_right=ScatterPlotItem(size=5,pen=crosshair_color,brush=crosshair_color)
+        self.dataPointCircle_right.setZValue(1000)
+        self.crosshair_v_right = InfiniteLine(angle=90, movable=False,pen=crosshair_color)
+        self.right_y_axis_graph.addItem(self.crosshair_v_right, ignoreBounds=True)
+        self.right_y_axis_graph.addItem(self.dataPointCircle_right)
         self.proxy = SignalProxy(self.figure.scene().sigMouseMoved, rateLimit=60, slot=self.update_crosshair)
-
+        
         self.left_right_dict={self.left_y_data_picker:{'axis':'left',
                                                        'viewbox':self.left_y_axis_graph,
                                                        'y_color':self.left_y_color,
@@ -178,7 +185,9 @@ class chronological_plotter(QWidget):
                                                        'y_data_label':None,
                                                        'y_data_plot':None,
                                                        'moving_average_color':self.left_moving_average_color,
-                                                       'moving_average_plot':None},
+                                                       'moving_average_plot':None,
+                                                       'crosshair_data_point':self.dataPointCircle_left,
+                                                       'crosshair_vertical_line':self.crosshair_v_left},
                               self.right_y_data_picker:{'axis':'right',
                                                        'viewbox':self.right_y_axis_graph,
                                                        'y_color':self.right_y_color,
@@ -186,7 +195,9 @@ class chronological_plotter(QWidget):
                                                        'y_data_label':None,
                                                        'y_data_plot':None,
                                                        'moving_average_color':self.right_moving_average_color,
-                                                       'moving_average_plot':None}}
+                                                       'moving_average_plot':None,
+                                                       'crosshair_data_point':self.dataPointCircle_right,
+                                                       'crosshair_vertical_line':self.crosshair_v_right}}
         self.left_y_data_picker.currentTextChanged.connect(self.change_y_data)
         self.right_y_data_picker.currentTextChanged.connect(self.change_y_data)
         #the 1st added item is set to current, change to update moving averages and then change back
@@ -220,11 +231,15 @@ class chronological_plotter(QWidget):
                 mPx=0
             elif mPx>self.xMax:
                 mPx=self.xMax
-
-            self.crosshair_v.setPos(mPx)            
-            xIndex=round(mPx)
-            self.dataPointCircle_asScatterPlot.clear()
-            self.dataPointCircle_asScatterPlot.addPoints([mPx], [y_data_dict[self.left_right_dict[self.left_y_data_picker]['y_data_label']][xIndex]])
+            for data_picker in [self.left_y_data_picker,self.right_y_data_picker]:
+                y_dict=self.left_right_dict[data_picker]
+                y_dict['crosshair_vertical_line'].setPos(mPx)
+                y_dict['crosshair_data_point'].clear()
+                xIndex=round(mPx)
+                try:
+                    y_dict['crosshair_data_point'].addPoints([mPx], [y_data_dict[y_dict['y_data_label']][xIndex]])
+                except:
+                    pass
             y_str=''
             for label,y_data in y_data_dict.items():
                 y_metric,y_unit=label.split(' [')
@@ -265,7 +280,7 @@ class chronological_plotter(QWidget):
             y_dict['y_data_label']=None
             y_dict['y_data_plot']=None
             y_dict['moving_average_plot']=None
-            self.figure.getAxis(y_dict['axis']).setLabel(y_dict['axis'],'',**self.styles)
+            self.figure.getAxis(y_dict['axis']).setLabel('',**self.styles)
             self.figure.getAxis(y_dict['axis']).setTicks('')
 
 class dataCOMP(QWidget):

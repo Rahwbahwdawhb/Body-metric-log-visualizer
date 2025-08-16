@@ -6,7 +6,7 @@
 import pygsheets
 import os
 import numpy as np
-from PyQt6.QtWidgets import QApplication, QWidget, QHBoxLayout, QVBoxLayout, QGridLayout, QSizePolicy, QLineEdit, QLabel, QComboBox, QTabWidget, QRadioButton
+from PyQt6.QtWidgets import QApplication, QWidget, QHBoxLayout, QVBoxLayout, QGridLayout, QLayout, QLineEdit, QLabel, QComboBox, QTabWidget, QRadioButton
 from PyQt6.QtCore import QRectF, Qt, QPointF, QPoint
 from PyQt6.QtGui import QColor, QFont, QFontDatabase, QPalette, QIcon
 from PyQt6.QtWidgets import QGraphicsEllipseItem
@@ -90,6 +90,25 @@ def movingAvg(data,window):
                 movAvgData.append(np.nan)
     return np.array(movAvgData)
 
+def stack_in_layout(QItems_list,layout_type='v'):
+    if layout_type=='v':
+        layout=QVBoxLayout()
+    else:
+        layout=QHBoxLayout()
+    for QItem in QItems_list:
+        if isinstance(QItem,QWidget):
+            layout.addWidget(QItem)
+        elif isinstance(QItem,QLayout):
+            layout.addLayout(QItem)
+        elif isinstance(QItem,tuple):
+            if QItem[0]=='stretch':
+                layout.addStretch(QItem[1])
+            elif isinstance(QItem[0],QLayout) and isinstance(QItem[1],int):
+                layout.addLayout(QItem[0],stretch=QItem[1])
+            elif isinstance(QItem[0],QWidget) and isinstance(QItem[1],int):
+                layout.addWidget(QItem[0],stretch=QItem[1])
+    return layout
+
 class chronological_plotter(QWidget):
     def __init__(self,styles={"font-family":"Times New Roman"}):
         crosshair_color="#ff00ff"
@@ -134,15 +153,9 @@ class chronological_plotter(QWidget):
             self.right_y_data_picker.addItem(label)
         self.left_y_data_picker.addItem('')
         self.right_y_data_picker.addItem('')
-        picker_layout=QHBoxLayout()
+        picker_layout=stack_in_layout([('stretch',1),QLabel('Left y-axis:'),self.left_y_data_picker,('stretch',1),
+                                       QLabel('Right y-axis:'),self.right_y_data_picker,('stretch',1)],'h')
         picker_layout.setSpacing(2)
-        picker_layout.addStretch(1)
-        picker_layout.addWidget(QLabel('Left y-axis:'))
-        picker_layout.addWidget(self.left_y_data_picker)
-        picker_layout.addStretch(1)
-        picker_layout.addWidget(QLabel('Right y-axis:'))
-        picker_layout.addWidget(self.right_y_data_picker)
-        picker_layout.addStretch(1)
         
         topTicks=[] 
         yCounter=1
@@ -155,13 +168,9 @@ class chronological_plotter(QWidget):
         self.figure.getAxis('top').setTicks([topTicks,[]])
         self.figure.getAxis('right').setTicks('')
         self.figure.setBackground(self.palette().color(QPalette.ColorRole.Window))
-        
-        left_layout=QVBoxLayout()
-        left_layout.addWidget(self.figure)
-        left_layout.addLayout(picker_layout)
-        mainGraphLayout=QHBoxLayout()
-        mainGraphLayout.addLayout(left_layout,stretch=4)
-        mainGraphLayout.addWidget(self.infoLabel,stretch=1)
+
+        left_layout=stack_in_layout([self.figure,picker_layout])
+        mainGraphLayout=stack_in_layout([(left_layout,4),(self.infoLabel,1)],'h')
         layout=QVBoxLayout()
         layout.addLayout(mainGraphLayout)
         self.setLayout(layout)
@@ -316,15 +325,6 @@ class dataCOMP(QWidget):
         self.x_data_picker.setCurrentIndex(1)
         self.y_data_picker.setCurrentIndex(1)
         formula_info_str=formula_info_str[:-1]
-        # picker_layout=QHBoxLayout()
-        # picker_layout.setSpacing(2)
-        # picker_layout.addStretch(1)
-        # picker_layout.addWidget(QLabel('y-axis:'))
-        # picker_layout.addWidget(self.y_data_picker)
-        # picker_layout.addStretch(1)
-        # picker_layout.addWidget(QLabel('x-axis:'))
-        # picker_layout.addWidget(self.x_data_picker)
-        # picker_layout.addStretch(1)
         self.x_formula=QLineEdit()
         self.y_formula=QLineEdit()
         picker_layout=QGridLayout()
@@ -337,18 +337,10 @@ class dataCOMP(QWidget):
 
         self.moving_average_indicator=QRadioButton('Moving average')
         self.data_indicator=QRadioButton('Data')
-        radio_button_layout=QVBoxLayout()
-        radio_button_layout.addWidget(self.data_indicator)
-        radio_button_layout.addWidget(self.moving_average_indicator)
-        # picker_layout.addLayout(radio_button_layout)
+        radio_button_layout=stack_in_layout([self.data_indicator,self.moving_average_indicator])
         picker_layout.addLayout(radio_button_layout,0,2,0,2)
-        bottom_layout=QHBoxLayout()
-        bottom_layout.addWidget(QLabel(formula_info_str))
-        bottom_layout.addLayout(picker_layout)
-
-        layout=QVBoxLayout()
-        layout.addWidget(self.figure)
-        layout.addLayout(bottom_layout)
+        bottom_layout=stack_in_layout([QLabel(formula_info_str),picker_layout],'h')
+        layout=stack_in_layout([self.figure,bottom_layout])
         self.setLayout(layout)
 
         self.moving_average_indicator.clicked.connect(self.change_data_dict)
@@ -460,49 +452,6 @@ class dataCOMP(QWidget):
                         result+=operand
                 return result,iter
             full_data_set,_=recursive_parse(data_label)
-            # temp=''
-            # is_number=False
-            # to_evaluate=[]
-            # to_operate=[]
-            # for ch in data_label:
-            #     if ch.isnumeric():
-            #         temp+=ch
-            #         is_number=True
-            #     elif ch in operators:
-            #         if is_number:
-            #             to_evaluate.append(float(temp))
-            #             is_number=False
-            #         temp=''
-            #         to_operate.append(ch)
-            #     else:
-            #         data_symbol=self.data_formula_map_dict[ch]
-            #         if data_symbol in self.scatter_dict['data_dict']:
-            #             to_evaluate.append(self.scatter_dict['data_dict'][data_symbol])
-            #         else:
-            #             to_evaluate.append(self.days)
-            # to_add_subtract=[to_evaluate[0]]
-            # add_subtract_operators=[]
-            # # last_operator=''
-            # for i,operator in enumerate(to_operate,start=1):
-            #     if operator=='*':
-            #         # if last_operator in {'*','/'}:
-            #         to_add_subtract[-1]=to_add_subtract[-1]*to_evaluate[i]
-            #         # else:
-            #         #     to_add_subtract.append(to_evaluate[i-1]*to_evaluate[i])
-            #     elif operator=='/':
-            #         # if last_operator in {'*','/'}:
-            #         to_add_subtract[-1]=to_add_subtract[-1]/to_evaluate[i]
-            #         # else:
-            #         #     to_add_subtract.append(to_evaluate[i-1]/to_evaluate[i])
-            #     else:
-            #         to_add_subtract.append(to_evaluate[i])
-            #         add_subtract_operators.append(operator)
-            # full_data_set=to_add_subtract[0]
-            # for operator,operand in zip(add_subtract_operators,to_add_subtract[1:]):
-            #     if operator=='-':
-            #         full_data_set-=operand
-            #     else:
-            #         full_data_set+=operand
 
         return full_data_set[self.scatter_dict['start_index']:self.scatter_dict['end_index']+1]
     def plot_data(self):
@@ -520,21 +469,16 @@ class mainWindow(QWidget):
         super().__init__()
         self.setWindowTitle('Body-metric log visualizer')
         self.setWindowIcon(QIcon('scale.png'))
-        ctrlLayout=QHBoxLayout()
         self.startLineEdit=QLineEdit()
         self.endLineEdit=QLineEdit()
         self.movAvgWindowLineEdit=QLineEdit()
         self.movAvgWindowLineEdit.setText('7')
-        ctrlLayout.addWidget(QLabel('From, Year,Month,Day:'))
-        ctrlLayout.addWidget(self.startLineEdit)
-        ctrlLayout.addWidget(QLabel('Until, Year,Month,Day:'))
-        ctrlLayout.addWidget(self.endLineEdit)
-        ctrlLayout.addWidget(QLabel('Avg. window:'))
-        ctrlLayout.addWidget(self.movAvgWindowLineEdit)
+        ctrlLayout=stack_in_layout([QLabel('From, Year,Month,Day:'),self.startLineEdit,
+                                    QLabel('Until, Year,Month,Day:'),self.endLineEdit,
+                                    QLabel('Avg. window:'),self.movAvgWindowLineEdit],'h')
         self.history_plot_widget=chronological_plotter(styles)
-        layout=QVBoxLayout()
         tabWidget=QTabWidget()
-        # tabWidget.addTab(self.history_plot_widget,'History')
+        tabWidget.addTab(self.history_plot_widget,'History')
         self.data_comparison_plot=dataCOMP()
         tabWidget.addTab(self.data_comparison_plot,'Comparison')
 
@@ -546,9 +490,7 @@ class mainWindow(QWidget):
             tab_page.setPalette(pal)
             tab_page.update()
 
-        
-        layout.addWidget(tabWidget)
-        layout.addLayout(ctrlLayout)
+        layout=stack_in_layout([tabWidget,ctrlLayout])
         self.setLayout(layout)
 
         self.startLineEdit.returnPressed.connect(self.updateStart)
@@ -574,7 +516,6 @@ class mainWindow(QWidget):
 if __name__=='__main__':
     app=QApplication([])
     app.setFont(QFont('Times New Roman'))
-    # gui=chronological_plotter()
     gui=mainWindow()
     gui.show()
     app.exec()

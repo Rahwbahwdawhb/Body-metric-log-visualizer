@@ -3,12 +3,12 @@
 import pygsheets
 import os
 import numpy as np
-from PyQt6.QtWidgets import QApplication, QWidget, QHBoxLayout, QVBoxLayout, QGridLayout, QSizePolicy, QLineEdit, QLabel, QComboBox, QTabWidget
+from PyQt6.QtWidgets import QApplication, QWidget, QHBoxLayout, QVBoxLayout, QGridLayout, QSizePolicy, QLineEdit, QLabel, QComboBox, QTabWidget, QRadioButton
 from PyQt6.QtCore import QRectF, Qt, QPointF, QPoint
 from PyQt6.QtGui import QColor, QFont, QFontDatabase, QPalette, QIcon
 from PyQt6.QtWidgets import QGraphicsEllipseItem
 from pyqtgraph import PlotWidget, mkPen,mkBrush, InfiniteLine, SignalProxy, CircleROI, ScatterPlotItem, ViewBox, PlotCurveItem, ScatterPlotItem, ColorMap
-np.seterr(all='warn')
+
 def get_data(service_account_file='client_secret.json',key_file='key.txt',date_column_index=1):
     """
     Assumes:
@@ -288,31 +288,89 @@ class dataCOMP(QWidget):
         self.legend=self.figure.addLegend(labelTextColor=(0,0,0))
         self.styles=styles
 
-        # x=y_data_dict['Weight [kg]']
-        # x=y_data_dict['Body fat [kg]']
-        # y=y_data_dict['Waist [cm]']
-        x=moving_average_dict['Body fat [kg]']
-        y=moving_average_dict['Weight [kg]']
-        # y=moving_average_dict['Waist [cm]']
+        self.scatter_dict={'x_label':None,'x_data':None,'y_label':None,'y_data':None,
+                           'data_dict':None,'start_index':0,'end_index':len(dates_formatted)}
 
         # Define a continuous gradient
-        cmap = ColorMap(
+        self.cmap = ColorMap(
         pos=np.linspace(0, 1, 2),       # gradient positions
         color=[( 0, 0, 255, 100),        # RGBA at pos 0
             (255, 0, 0, 255)]        # at pos 1
             )
 
-        # Map normalized t-values to colors
-        t = np.linspace(0, 1, len(x))
-        colors = cmap.mapToQColor(t)  # PyQtGraph does the interpolation
+        # # Map normalized t-values to colors
+        # t = np.linspace(0, 1, len(y_data_dict['Weight [kg]']))
+        # self.colors = cmap.mapToQColor(t)  # PyQtGraph does the interpolation
 
-        scatter = ScatterPlotItem(x=x, y=y, pen=None, brush=colors, size=10)
-        self.figure.plotItem.vb.addItem(scatter)
-        # self.figure.plot(y_data_dict['Weight [kg]'],y_data_dict['Body fat [kg]'],pen=None, symbol='o', symbolBrush='r')
+        self.y_data_picker=QComboBox()
+        self.x_data_picker=QComboBox()
+        for label in y_data_dict.keys():
+            self.y_data_picker.addItem(label)
+            self.x_data_picker.addItem(label)
+        self.x_data_picker.addItem('Formula')
+        self.x_data_picker.setCurrentIndex(1)
+        self.y_data_picker.addItem('Formula')
+        self.y_data_picker.setCurrentIndex(1)
+        picker_layout=QHBoxLayout()
+        picker_layout.setSpacing(2)
+        picker_layout.addStretch(1)
+        picker_layout.addWidget(QLabel('y-axis:'))
+        picker_layout.addWidget(self.y_data_picker)
+        picker_layout.addStretch(1)
+        picker_layout.addWidget(QLabel('x-axis:'))
+        picker_layout.addWidget(self.x_data_picker)
+        picker_layout.addStretch(1)
+
+        self.moving_average_indicator=QRadioButton('Moving average')
+        self.data_indicator=QRadioButton('Data')
+        radio_button_layout=QVBoxLayout()
+        radio_button_layout.addWidget(self.data_indicator)
+        radio_button_layout.addWidget(self.moving_average_indicator)
+        picker_layout.addLayout(radio_button_layout)
+
         layout=QVBoxLayout()
         layout.addWidget(self.figure)
+        layout.addLayout(picker_layout)
         self.setLayout(layout)
 
+        self.moving_average_indicator.clicked.connect(self.change_data_dict)
+        self.data_indicator.clicked.connect(self.change_data_dict)
+        self.moving_average_indicator.click()
+        self.y_data_picker.currentTextChanged.connect(self.change_data)
+        self.x_data_picker.currentTextChanged.connect(self.change_data)
+        self.x_data_picker.setCurrentIndex(0)
+        self.y_data_picker.setCurrentIndex(0)
+    def change_data_dict(self):
+        if self.sender()==self.moving_average_indicator:
+            self.scatter_dict['data_dict']=moving_average_dict
+        else:
+            self.scatter_dict['data_dict']=y_data_dict
+        self.plot_data()
+    def change_data(self,text):
+        if self.sender()==self.y_data_picker:
+            self.scatter_dict['y_label']=text
+        if self.sender()==self.x_data_picker:
+            self.scatter_dict['x_label']=text
+        self.plot_data()
+    def set_start_index(self,startStr):
+        self.scatter_dict['start_index']=dates_formatted.index(startStr)
+        self.plot_data()
+    def set_end_index(self,endStr):
+        self.scatter_dict['end_index']=dates_formatted.index(endStr)
+        self.plot_data()
+    def get_data(self,xy_label):
+        full_data_set=self.scatter_dict['data_dict'][self.scatter_dict[xy_label]]
+        return full_data_set[self.scatter_dict['start_index']:self.scatter_dict['end_index']+1]
+    def plot_data(self):
+        try:
+            self.figure.plotItem.vb.removeItem(self.scatter)
+        except:
+            pass
+        if self.scatter_dict['x_label'] is not None and self.scatter_dict['y_label'] is not None:
+            x_data=self.get_data('x_label')
+            self.colors = self.cmap.mapToQColor(np.linspace(0, 1, len(x_data)))
+            self.scatter = ScatterPlotItem(x=x_data, y=self.get_data('y_label'), pen=None, brush=self.colors, size=10)
+            self.figure.plotItem.vb.addItem(self.scatter)
 class mainWindow(QWidget):
     def __init__(self,styles={"font-family":"Times New Roman"}):
         super().__init__()
@@ -359,11 +417,14 @@ class mainWindow(QWidget):
     def updateStart(self):
         startStr=self.startLineEdit.text()
         self.history_plot_widget.updateStart(startStr)
+        self.data_comparison_plot.set_start_index(startStr)
     def updateEnd(self):
         endStr=self.endLineEdit.text()
         self.history_plot_widget.updateEnd(endStr)
+        self.data_comparison_plot.set_end_index(endStr)
     def updateMovAg(self):
         self.history_plot_widget.updateMovAg(int(self.movAvgWindowLineEdit.text()))
+        self.data_comparison_plot.plot_data()
 
 
 if __name__=='__main__':

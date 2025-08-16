@@ -3,6 +3,7 @@
 #verify recursive parsing with example data that's easier to check
 #same vertical size of self.x_picker_show, self.y_formula and self.x_data_picker
 #stop lower outline of self.y_formula from vanishing when hovering above it
+#option to display data as lines or dots for both views
 
 import pygsheets
 import os
@@ -456,6 +457,8 @@ class dataCOMP(QWidget):
                             to_evaluate.append(self.scatter_dict['data_dict'][data_symbol])
                         else:
                             to_evaluate.append(self.days)
+                if temp!='':
+                    to_evaluate.append(float(temp))
                 to_add_subtract=[to_evaluate[0]]
                 add_subtract_operators=[]
                 for i,operator in enumerate(to_operate,start=1):

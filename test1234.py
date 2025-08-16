@@ -1,12 +1,13 @@
 #todo:
-#add return-to-list button from formula
 #split code into separate scripts
 #verify recursive parsing with example data that's easier to check
+#same vertical size of self.x_picker_show, self.y_formula and self.x_data_picker
+#stop lower outline of self.y_formula from vanishing when hovering above it
 
 import pygsheets
 import os
 import numpy as np
-from PyQt6.QtWidgets import QApplication, QWidget, QHBoxLayout, QVBoxLayout, QGridLayout, QLayout, QLineEdit, QLabel, QComboBox, QTabWidget, QRadioButton
+from PyQt6.QtWidgets import QApplication, QWidget, QHBoxLayout, QVBoxLayout, QGridLayout, QLayout, QLineEdit, QLabel, QComboBox, QTabWidget, QRadioButton, QPushButton
 from PyQt6.QtCore import QRectF, Qt, QPointF, QPoint
 from PyQt6.QtGui import QColor, QFont, QFontDatabase, QPalette, QIcon
 from PyQt6.QtWidgets import QGraphicsEllipseItem
@@ -331,13 +332,17 @@ class dataCOMP(QWidget):
         self.y_data_picker.setCurrentIndex(1)
         formula_info_str=formula_info_str[:-1]
         self.x_formula=QLineEdit()
+        self.x_picker_show=QPushButton('List')
+        self.x_picker_show.hide()
         self.y_formula=QLineEdit()
+        self.y_picker_show=QPushButton('List')
+        self.y_picker_show.hide()
         picker_layout=QGridLayout()
         picker_layout.addWidget(QLabel('x-axis:'),0,0)
-        picker_layout.addWidget(self.x_formula,0,1)
+        picker_layout.addLayout(stack_in_layout([self.x_formula,self.x_picker_show],'h'),0,1)
         picker_layout.addWidget(self.x_data_picker,0,1)
         picker_layout.addWidget(QLabel('y-axis:'),1,0)
-        picker_layout.addWidget(self.y_formula,1,1)
+        picker_layout.addLayout(stack_in_layout([self.y_formula,self.y_picker_show],'h'),1,1)
         picker_layout.addWidget(self.y_data_picker,1,1)
 
         self.moving_average_indicator=QRadioButton('Moving average')
@@ -351,22 +356,31 @@ class dataCOMP(QWidget):
         self.moving_average_indicator.clicked.connect(self.change_data_dict)
         self.data_indicator.clicked.connect(self.change_data_dict)
         self.moving_average_indicator.click()
-        self.y_data_picker.currentTextChanged.connect(self.change_data)
-        self.x_data_picker.currentTextChanged.connect(self.change_data)
-        self.x_data_picker.setCurrentIndex(0)
-        self.y_data_picker.setCurrentIndex(0)
+        self.x_data_picker.activated.connect(self.change_data)
+        self.y_data_picker.activated.connect(self.change_data)
+        self.x_data_picker.activated.emit(0)        
+        self.y_data_picker.activated.emit(0)
         self.y_formula.returnPressed.connect(self.enter_formula)
         self.x_formula.returnPressed.connect(self.enter_formula)
+        self.y_picker_show.pressed.connect(self.show_picker)
+        self.x_picker_show.pressed.connect(self.show_picker)
+    def show_picker(self):
+        if self.sender()==self.y_picker_show:
+            self.y_data_picker.show()
+            self.y_picker_show.hide()
+        else:
+            self.x_data_picker.show()
+            self.x_picker_show.hide()
     def enter_formula(self):
         formula=self.sender().text()
         if self.sender()==self.y_formula:
             self.y_formula_str=formula
-            self.y_data_picker.setItemText(self.y_data_picker.count()-1,formula)
-            self.y_data_picker.show()
+            picker=self.y_data_picker
         else:
             self.x_formula_str=formula
-            self.x_data_picker.setItemText(self.y_data_picker.count()-1,formula)
-            self.x_data_picker.show()
+            picker=self.x_data_picker
+        picker.setItemText(self.y_data_picker.count()-1,formula)
+        picker.activated.emit(self.y_data_picker.count()-1)
         self.plot_data()
     def change_data_dict(self):
         if self.sender()==self.moving_average_indicator:
@@ -374,7 +388,8 @@ class dataCOMP(QWidget):
         else:
             self.scatter_dict['data_dict']=y_data_dict
         self.plot_data()
-    def change_data(self,text):
+    def change_data(self):
+        text=self.sender().currentText()
         if self.sender()==self.y_data_picker:
             self.scatter_dict['y_label']=text
         if self.sender()==self.x_data_picker:
@@ -382,8 +397,10 @@ class dataCOMP(QWidget):
         if text==self.x_formula_str or text==self.y_formula_str:
             if self.sender()==self.y_data_picker:
                 self.y_data_picker.hide()
+                self.y_picker_show.show()
             else:
                 self.x_data_picker.hide()
+                self.x_picker_show.show()
         else:
             self.plot_data()
     def set_start_index(self,startStr):

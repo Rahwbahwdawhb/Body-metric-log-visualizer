@@ -275,6 +275,8 @@ class chronological_plotter(QWidget):
             y_dict['viewbox'].removeItem(y_dict['y_data_plot'])
             self.legend.removeItem(y_dict['y_data_plot'])
         if text!='':
+            y_dict['crosshair_vertical_line'].show()
+            y_dict['crosshair_data_point'].show()
             y_dict['y_data_label']=text
             y_dict['y_data_plot']=PlotCurveItem(y_data_dict[y_dict['y_data_label']],pen=y_dict['y_color'])
             self.legend.addItem(y_dict['y_data_plot'],name='Data')
@@ -290,6 +292,8 @@ class chronological_plotter(QWidget):
             y_dict['y_data_label']=None
             y_dict['y_data_plot']=None
             y_dict['moving_average_plot']=None
+            y_dict['crosshair_vertical_line'].hide()
+            y_dict['crosshair_data_point'].hide()
             self.figure.getAxis(y_dict['axis']).setLabel('',**self.styles)
             self.figure.getAxis(y_dict['axis']).setTicks('')
 

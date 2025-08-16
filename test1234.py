@@ -1,4 +1,7 @@
 #todo:
+#add return-to-list button from formula
+#split code into separate scripts
+#verify recursive parsing with example data that's easier to check
 
 import pygsheets
 import os
@@ -58,8 +61,9 @@ def get_data(service_account_file='client_secret.json',key_file='key.txt',date_c
         except:
             currentYear=date
             year_rows.append((valid_count,date))
-        
         valid_count+=1
+    for key,_list in y_data_dict.items():
+        y_data_dict[key]=np.array(_list)
     return dates_formatted,y_data_dict,info_columns_dict,year_rows
 
 dates_formatted,y_data_dict,info_columns_dict,year_rows=get_data(service_account_file='client_secret.json',key_file='key.txt')
@@ -287,10 +291,11 @@ class dataCOMP(QWidget):
         self.figure.setBackground(self.palette().color(QPalette.ColorRole.Window))
         self.legend=self.figure.addLegend(labelTextColor=(0,0,0))
         self.styles=styles
-
+        self.days=np.linspace(1,len(dates_formatted),len(dates_formatted))
         self.scatter_dict={'x_label':None,'x_data':None,'y_label':None,'y_data':None,
                            'data_dict':None,'start_index':0,'end_index':len(dates_formatted)}
-
+        self.x_formula_str='Formula'
+        self.y_formula_str='Formula'
         # Define a continuous gradient
         self.cmap = ColorMap(
         pos=np.linspace(0, 1, 2),       # gradient positions
@@ -298,39 +303,52 @@ class dataCOMP(QWidget):
             (255, 0, 0, 255)]        # at pos 1
             )
 
-        # # Map normalized t-values to colors
-        # t = np.linspace(0, 1, len(y_data_dict['Weight [kg]']))
-        # self.colors = cmap.mapToQColor(t)  # PyQtGraph does the interpolation
-
         self.y_data_picker=QComboBox()
         self.x_data_picker=QComboBox()
-        for label in y_data_dict.keys():
-            self.y_data_picker.addItem(label)
-            self.x_data_picker.addItem(label)
-        self.x_data_picker.addItem('Formula')
+        self.data_formula_map_dict={}
+        formula_info_str=''
+        for i,label in enumerate(list(y_data_dict.keys())+['Days',self.x_formula_str]):
+            if label!=self.x_formula_str:
+                self.data_formula_map_dict[chr(65+i)]=label
+                formula_info_str+=f"{chr(65+i)}: {label}\n"
+            for picker in [self.y_data_picker,self.x_data_picker]:
+                picker.addItem(label)
         self.x_data_picker.setCurrentIndex(1)
-        self.y_data_picker.addItem('Formula')
         self.y_data_picker.setCurrentIndex(1)
-        picker_layout=QHBoxLayout()
-        picker_layout.setSpacing(2)
-        picker_layout.addStretch(1)
-        picker_layout.addWidget(QLabel('y-axis:'))
-        picker_layout.addWidget(self.y_data_picker)
-        picker_layout.addStretch(1)
-        picker_layout.addWidget(QLabel('x-axis:'))
-        picker_layout.addWidget(self.x_data_picker)
-        picker_layout.addStretch(1)
+        formula_info_str=formula_info_str[:-1]
+        # picker_layout=QHBoxLayout()
+        # picker_layout.setSpacing(2)
+        # picker_layout.addStretch(1)
+        # picker_layout.addWidget(QLabel('y-axis:'))
+        # picker_layout.addWidget(self.y_data_picker)
+        # picker_layout.addStretch(1)
+        # picker_layout.addWidget(QLabel('x-axis:'))
+        # picker_layout.addWidget(self.x_data_picker)
+        # picker_layout.addStretch(1)
+        self.x_formula=QLineEdit()
+        self.y_formula=QLineEdit()
+        picker_layout=QGridLayout()
+        picker_layout.addWidget(QLabel('x-axis:'),0,0)
+        picker_layout.addWidget(self.x_formula,0,1)
+        picker_layout.addWidget(self.x_data_picker,0,1)
+        picker_layout.addWidget(QLabel('y-axis:'),1,0)
+        picker_layout.addWidget(self.y_formula,1,1)
+        picker_layout.addWidget(self.y_data_picker,1,1)
 
         self.moving_average_indicator=QRadioButton('Moving average')
         self.data_indicator=QRadioButton('Data')
         radio_button_layout=QVBoxLayout()
         radio_button_layout.addWidget(self.data_indicator)
         radio_button_layout.addWidget(self.moving_average_indicator)
-        picker_layout.addLayout(radio_button_layout)
+        # picker_layout.addLayout(radio_button_layout)
+        picker_layout.addLayout(radio_button_layout,0,2,0,2)
+        bottom_layout=QHBoxLayout()
+        bottom_layout.addWidget(QLabel(formula_info_str))
+        bottom_layout.addLayout(picker_layout)
 
         layout=QVBoxLayout()
         layout.addWidget(self.figure)
-        layout.addLayout(picker_layout)
+        layout.addLayout(bottom_layout)
         self.setLayout(layout)
 
         self.moving_average_indicator.clicked.connect(self.change_data_dict)
@@ -340,6 +358,19 @@ class dataCOMP(QWidget):
         self.x_data_picker.currentTextChanged.connect(self.change_data)
         self.x_data_picker.setCurrentIndex(0)
         self.y_data_picker.setCurrentIndex(0)
+        self.y_formula.returnPressed.connect(self.enter_formula)
+        self.x_formula.returnPressed.connect(self.enter_formula)
+    def enter_formula(self):
+        formula=self.sender().text()
+        if self.sender()==self.y_formula:
+            self.y_formula_str=formula
+            self.y_data_picker.setItemText(self.y_data_picker.count()-1,formula)
+            self.y_data_picker.show()
+        else:
+            self.x_formula_str=formula
+            self.x_data_picker.setItemText(self.y_data_picker.count()-1,formula)
+            self.x_data_picker.show()
+        self.plot_data()
     def change_data_dict(self):
         if self.sender()==self.moving_average_indicator:
             self.scatter_dict['data_dict']=moving_average_dict
@@ -351,7 +382,13 @@ class dataCOMP(QWidget):
             self.scatter_dict['y_label']=text
         if self.sender()==self.x_data_picker:
             self.scatter_dict['x_label']=text
-        self.plot_data()
+        if text==self.x_formula_str or text==self.y_formula_str:
+            if self.sender()==self.y_data_picker:
+                self.y_data_picker.hide()
+            else:
+                self.x_data_picker.hide()
+        else:
+            self.plot_data()
     def set_start_index(self,startStr):
         self.scatter_dict['start_index']=dates_formatted.index(startStr)
         self.plot_data()
@@ -359,7 +396,114 @@ class dataCOMP(QWidget):
         self.scatter_dict['end_index']=dates_formatted.index(endStr)
         self.plot_data()
     def get_data(self,xy_label):
-        full_data_set=self.scatter_dict['data_dict'][self.scatter_dict[xy_label]]
+        data_label=self.scatter_dict[xy_label]
+        evaluate_formula=False
+        match data_label:
+            case self.x_formula_str:
+                evaluate_formula=True
+                self.x_formula_str=data_label
+            case self.y_formula_str:
+                evaluate_formula=True
+                self.y_formula_str=data_label
+            case 'Days':
+                full_data_set=self.days
+            case _:
+                full_data_set=self.scatter_dict['data_dict'][data_label]
+        if evaluate_formula:
+            operators={'*','+','-','/'}
+            data_label.replace(' ','')
+            def recursive_parse(str_to_parse):
+                temp=''
+                is_number=False
+                to_evaluate=[]
+                to_operate=[]
+                iter=0
+                while iter<len(str_to_parse):
+                    ch=str_to_parse[iter]
+                    iter+=1
+                    if ch=='(':
+                        rec_result,rec_iter=recursive_parse(str_to_parse[iter:])
+                        to_evaluate.append(rec_result)
+                        iter+=rec_iter
+                    elif ch==')':
+                        break
+                    elif ch.isnumeric():
+                        temp+=ch
+                        is_number=True
+                    elif ch in operators:
+                        if is_number:
+                            to_evaluate.append(float(temp))
+                            is_number=False
+                        temp=''
+                        to_operate.append(ch)
+                    else:
+                        data_symbol=self.data_formula_map_dict[ch]
+                        if data_symbol in self.scatter_dict['data_dict']:
+                            to_evaluate.append(self.scatter_dict['data_dict'][data_symbol])
+                        else:
+                            to_evaluate.append(self.days)
+                to_add_subtract=[to_evaluate[0]]
+                add_subtract_operators=[]
+                for i,operator in enumerate(to_operate,start=1):
+                    if operator=='*':
+                        to_add_subtract[-1]=to_add_subtract[-1]*to_evaluate[i]
+                    elif operator=='/':
+                        to_add_subtract[-1]=to_add_subtract[-1]/to_evaluate[i]
+                    else:
+                        to_add_subtract.append(to_evaluate[i])
+                        add_subtract_operators.append(operator)
+                result=to_add_subtract[0]
+                for operator,operand in zip(add_subtract_operators,to_add_subtract[1:]):
+                    if operator=='-':
+                        result-=operand
+                    else:
+                        result+=operand
+                return result,iter
+            full_data_set,_=recursive_parse(data_label)
+            # temp=''
+            # is_number=False
+            # to_evaluate=[]
+            # to_operate=[]
+            # for ch in data_label:
+            #     if ch.isnumeric():
+            #         temp+=ch
+            #         is_number=True
+            #     elif ch in operators:
+            #         if is_number:
+            #             to_evaluate.append(float(temp))
+            #             is_number=False
+            #         temp=''
+            #         to_operate.append(ch)
+            #     else:
+            #         data_symbol=self.data_formula_map_dict[ch]
+            #         if data_symbol in self.scatter_dict['data_dict']:
+            #             to_evaluate.append(self.scatter_dict['data_dict'][data_symbol])
+            #         else:
+            #             to_evaluate.append(self.days)
+            # to_add_subtract=[to_evaluate[0]]
+            # add_subtract_operators=[]
+            # # last_operator=''
+            # for i,operator in enumerate(to_operate,start=1):
+            #     if operator=='*':
+            #         # if last_operator in {'*','/'}:
+            #         to_add_subtract[-1]=to_add_subtract[-1]*to_evaluate[i]
+            #         # else:
+            #         #     to_add_subtract.append(to_evaluate[i-1]*to_evaluate[i])
+            #     elif operator=='/':
+            #         # if last_operator in {'*','/'}:
+            #         to_add_subtract[-1]=to_add_subtract[-1]/to_evaluate[i]
+            #         # else:
+            #         #     to_add_subtract.append(to_evaluate[i-1]/to_evaluate[i])
+            #     else:
+            #         to_add_subtract.append(to_evaluate[i])
+            #         add_subtract_operators.append(operator)
+            # full_data_set=to_add_subtract[0]
+            # for operator,operand in zip(add_subtract_operators,to_add_subtract[1:]):
+            #     if operator=='-':
+            #         full_data_set-=operand
+            #     else:
+            #         full_data_set+=operand
+
         return full_data_set[self.scatter_dict['start_index']:self.scatter_dict['end_index']+1]
     def plot_data(self):
         try:
@@ -390,7 +534,7 @@ class mainWindow(QWidget):
         self.history_plot_widget=chronological_plotter(styles)
         layout=QVBoxLayout()
         tabWidget=QTabWidget()
-        tabWidget.addTab(self.history_plot_widget,'History')
+        # tabWidget.addTab(self.history_plot_widget,'History')
         self.data_comparison_plot=dataCOMP()
         tabWidget.addTab(self.data_comparison_plot,'Comparison')
 

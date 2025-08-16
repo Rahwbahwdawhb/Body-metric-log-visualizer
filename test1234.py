@@ -1,7 +1,4 @@
 #todo:
-#for days with no data, catch:
-# d:\Python\Projects\weightTrackVisualizer\projVenv\lib\site-packages\pyqtgraph\graphicsItems\ScatterPlotItem.py:871: RuntimeWarning: All-NaN slice encountered
-#   self.bounds[ax] = (np.nanmin(d) - self._maxSpotWidth*0.7072, np.nanmax(d) + self._maxSpotWidth*0.7072)
 
 import pygsheets
 import os
@@ -11,7 +8,7 @@ from PyQt6.QtCore import QRectF, Qt, QPointF, QPoint
 from PyQt6.QtGui import QColor, QFont, QFontDatabase, QPalette, QIcon
 from PyQt6.QtWidgets import QGraphicsEllipseItem
 from pyqtgraph import PlotWidget, mkPen,mkBrush, InfiniteLine, SignalProxy, CircleROI, ScatterPlotItem, ViewBox, PlotCurveItem, ScatterPlotItem, ColorMap
-
+np.seterr(all='warn')
 def get_data(service_account_file='client_secret.json',key_file='key.txt',date_column_index=1):
     """
     Assumes:
@@ -233,13 +230,13 @@ class chronological_plotter(QWidget):
                 mPx=self.xMax
             for data_picker in [self.left_y_data_picker,self.right_y_data_picker]:
                 y_dict=self.left_right_dict[data_picker]
-                y_dict['crosshair_vertical_line'].setPos(mPx)
-                y_dict['crosshair_data_point'].clear()
-                xIndex=round(mPx)
-                try:
-                    y_dict['crosshair_data_point'].addPoints([mPx], [y_data_dict[y_dict['y_data_label']][xIndex]])
-                except:
-                    pass
+                if y_dict['y_data_label']:
+                    y_dict['crosshair_vertical_line'].setPos(mPx)
+                    y_dict['crosshair_data_point'].clear()
+                    xIndex=round(mPx)
+                    y_value=y_data_dict[y_dict['y_data_label']][xIndex]
+                    if not np.isnan(y_value):
+                        y_dict['crosshair_data_point'].addPoints([mPx], [y_value])
             y_str=''
             for label,y_data in y_data_dict.items():
                 y_metric,y_unit=label.split(' [')

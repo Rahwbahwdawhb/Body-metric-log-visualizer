@@ -253,7 +253,7 @@ class chronological_plotter(QWidget):
                     if not np.isnan(y_value):
                         y_dict['crosshair_data_point'].addPoints([mPx], [y_value])
             y_str=''
-            if xIndex in locals():
+            if 'xIndex' in locals():
                 for label,y_data in y_data_dict.items():
                     y_metric,y_unit=label.split(' [')
                     y_metric_moving_avg=moving_average_dict[label][xIndex]

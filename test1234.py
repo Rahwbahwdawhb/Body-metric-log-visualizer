@@ -28,7 +28,6 @@ def get_data(service_account_file='key.json',spreadsheet_id_file='spreadsheet_id
     dates_formatted: List of strings of the form YYYY,MM,DD for all non-year rows
     data_dict: dictionary with keys=data column descriptors, values=column data values
     info_columns_dict: dictionary with keys=info column descriptors, values=column info strings
-    year_rows: list containing row indices (0-indexed) for the years
 
     Assumes the spread sheet data to be of the form:
     Column 1: Dates of the format DD/MM, e.g. 1/7 (1st of June), 21/8 (21st of August), 1/12 (1st of December), 23/12 (23rd of December)
@@ -64,7 +63,6 @@ def get_data(service_account_file='key.json',spreadsheet_id_file='spreadsheet_id
         info_columns_dict[key]=[]
         info_columns.append(worksheet.get_col(i)[1:])
     dates_formatted=[]
-    year_rows=[]
     valid_count=0
     for i,date in enumerate(date_column[::-1]):
         if date=='':
@@ -83,14 +81,12 @@ def get_data(service_account_file='key.json',spreadsheet_id_file='spreadsheet_id
                 _list.append(info_columns[ii][N-1-i])
         except:
             currentYear=date
-            year_rows.append((valid_count,date))
         valid_count+=1
     for key,_list in data_dict.items():
         data_dict[key]=np.array(_list)
-    return dates_formatted,data_dict,info_columns_dict,year_rows
+    return dates_formatted,data_dict,info_columns_dict
 
-dates_formatted,data_dict,info_columns_dict,year_rows=get_data()
-# dates_formatted,data_dict,info_columns_dict,year_rows=get_data(service_account_file='client_secret.json',key_file='key.txt')
+dates_formatted,data_dict,info_columns_dict=get_data()
 moving_average_dict={key:None for key in data_dict.keys()}
 
 def moving_average(data,window):
@@ -201,10 +197,11 @@ class chronological_plotter(QWidget):
         picker_layout=stack_in_layout([('stretch',1),QLabel('Left y-axis:'),self.left_y_data_picker,('stretch',1),
                                        QLabel('Right y-axis:'),self.right_y_data_picker,('stretch',1)],'h')
         picker_layout.setSpacing(2)
-
+        year_rows=[]
         for i,dStr in enumerate(dates_formatted):
             y,m,d=dStr.split(',')
             if m+d=='0101':
+                year_rows.append((i,y))
                 self.left_y_axis_graph.addItem(InfiniteLine(pos=i,angle=90,pen=pen2))
         self.figure.getAxis('top').setTicks([year_rows,[]])
         self.figure.getAxis('right').setTicks('')

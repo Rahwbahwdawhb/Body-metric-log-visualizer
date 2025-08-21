@@ -4,6 +4,7 @@
 #same vertical size of self.x_picker_show, self.y_formula and self.x_data_picker
 #stop lower outline of self.y_formula from vanishing when hovering above it
 #option to display data as lines or dots for both views
+#display formula instructions when hovering over some icon that appears when clicking formula
 
 import pygsheets
 import os
@@ -14,29 +15,49 @@ from PyQt6.QtGui import QColor, QFont, QFontDatabase, QPalette, QIcon
 from PyQt6.QtWidgets import QGraphicsEllipseItem
 from pyqtgraph import PlotWidget, mkPen,mkBrush, InfiniteLine, SignalProxy, CircleROI, ScatterPlotItem, ViewBox, PlotCurveItem, ScatterPlotItem, ColorMap
 
-def get_data(service_account_file='client_secret.json',key_file='key.txt',date_column_index=1):
+def get_data(service_account_file='key.json',spreadsheet_id_file='spreadsheet_id.txt'):
     """
-    Assumes:
-     Dates on the form DD/MM
-     Years are indicated by blank rows with only the year, e.g. 2022, mentioned in the date column
-     That the bottom entry of the date column starts with a year
+    Parse Google spreadsheet data
+    Inputs:
+    service_account_file: Google Service Account key of .json-format 
+    spreadsheet_id_file: .txt-file containing the spreadsheet ID
+
+    See readMe.txt for details.
+
+    Outputs:
+    dates_formatted: List of strings of the form YYYY,MM,DD for all non-year rows
+    data_dict: dictionary with keys=data column descriptors, values=column data values
+    info_columns_dict: dictionary with keys=info column descriptors, values=column info strings
+    year_rows: list containing row indices (0-indexed) for the years
+
+    Assumes the spread sheet data to be of the form:
+    Column 1: Dates of the format DD/MM, e.g. 1/7 (1st of June), 21/8 (21st of August), 1/12 (1st of December), 23/12 (23rd of December)
+              Years are indicated in this column as a single entry, e.g. 2024, all other columns of such rows should be empty
+              The most recent dates should be at the top of the spreadsheet
+    Column 2: Weight, in units of kg
+    Column 3: Waist circumference in units of cm
+    Column 4: Body fat in units of %
+    Column 5: Body fat in units of kg
+    Column 6: Hydration in units of %
+    Column 7: Activity (Text input)
+    Column 8: Notes (Text input)
     """
     os.chdir(os.path.dirname(__file__))
     #authorize
     gc=pygsheets.authorize(service_account_file=service_account_file)
     #open google spreadsheet
-    with open(key_file) as f:
+    with open(spreadsheet_id_file) as f:
         key=f.read()
     worksheet=gc.open_by_key(key)[0]
-    date_column=worksheet.get_col(date_column_index)[1:]
+    date_column=worksheet.get_col(1)[1:]
     N=len(date_column)
-    y_data_columns_id=[('Weight [kg]',2),('Waist [cm]',3),('Body fat [%]',4),('Body fat [kg]',5),('Hydration [%]',6)]
+    data_columns_id=[('Weight [kg]',2),('Waist [cm]',3),('Body fat [%]',4),('Body fat [kg]',5),('Hydration [%]',6)]
     info_columns_id=[('Activity',7),('Notes',8)]
-    y_data_dict={}
-    y_data_columns=[]
-    for key,i in y_data_columns_id:
-        y_data_dict[key]=[]
-        y_data_columns.append(worksheet.get_col(i)[1:])
+    data_dict={}
+    data_columns=[]
+    for key,i in data_columns_id:
+        data_dict[key]=[]
+        data_columns.append(worksheet.get_col(i)[1:])
     info_columns_dict={}
     info_columns=[]
     for key,i in info_columns_id:
@@ -51,8 +72,8 @@ def get_data(service_account_file='client_secret.json',key_file='key.txt',date_c
         try:
             day,month=date.split('/')
             dates_formatted.append(f"{currentYear},{('0'+month)[-2:]},{('0'+day)[-2:]}")
-            for ii,(_,_list) in enumerate(y_data_dict.items()):
-                y_value=y_data_columns[ii][N-1-i].replace(' ','.')
+            for ii,(_,_list) in enumerate(data_dict.items()):
+                y_value=data_columns[ii][N-1-i].replace(' ','.')
                 if y_value=='' or float(y_value)==0:
                     y_value=np.nan
                 else:
@@ -64,35 +85,54 @@ def get_data(service_account_file='client_secret.json',key_file='key.txt',date_c
             currentYear=date
             year_rows.append((valid_count,date))
         valid_count+=1
-    for key,_list in y_data_dict.items():
-        y_data_dict[key]=np.array(_list)
-    return dates_formatted,y_data_dict,info_columns_dict,year_rows
+    for key,_list in data_dict.items():
+        data_dict[key]=np.array(_list)
+    return dates_formatted,data_dict,info_columns_dict,year_rows
 
-dates_formatted,y_data_dict,info_columns_dict,year_rows=get_data(service_account_file='client_secret.json',key_file='key.txt')
-moving_average_dict={key:None for key in y_data_dict.keys()}
+dates_formatted,data_dict,info_columns_dict,year_rows=get_data()
+# dates_formatted,data_dict,info_columns_dict,year_rows=get_data(service_account_file='client_secret.json',key_file='key.txt')
+moving_average_dict={key:None for key in data_dict.keys()}
 
-def movingAvg(data,window):
-    movAvgData=[]
-    halfWindow=window//2
-    Ndata=len(data)
-    for i in range(Ndata):
-        startIndex=np.max([0,i-halfWindow])
+def moving_average(data,window):
+    """
+    Moving average calculation
+
+    Inputs:
+    data: iterable containing data values
+    window: size of moving average window
+    
+    Output: numpy array with moving average values
+    """
+    moving_average_data=[]
+    half_window=window//2
+    N=len(data)
+    for i in range(N):
+        start_index=np.max([0,i-half_window])
         if np.isnan(data[i]):
-            movAvgData.append(np.nan)
+            moving_average_data.append(np.nan)
         else:
-            if startIndex==0:
-                endIndex=np.max([1,i*2])
+            if start_index==0:
+                end_index=np.max([1,i*2])
             else:
-                endIndex=np.min([Ndata-1,startIndex+window])
-            dataSlice=data[startIndex:endIndex]
-            dataSlide_finite=[d for d in dataSlice if np.isfinite(d)]
+                end_index=np.min([N-1,start_index+window])
+            data_slice=data[start_index:end_index]
+            data_slice_finite=[d for d in data_slice if np.isfinite(d)]
             try:
-                movAvgData.append(np.mean(dataSlide_finite))
+                moving_average_data.append(np.mean(data_slice_finite))
             except:
-                movAvgData.append(np.nan)
-    return np.array(movAvgData)
+                moving_average_data.append(np.nan)
+    return np.array(moving_average_data)
 
 def stack_in_layout(QItems_list,layout_type='v'):
+    """
+    Stack QWidgets and/or QLayouts into a QHBoxLayout or QVBoxLayout, the stacking follows the order of QItems_list
+
+    Inputs:
+    QItems_list: iterable containing QWidgets or QLayouts to be stacked
+    layout_type: 'v' to stack into a QVBoxLayout, any other value will stack into a QHBoxLayout
+
+    Output: the stacked QHBoxLayout or QVBoxLayout
+    """
     if layout_type=='v':
         layout=QVBoxLayout()
     else:
@@ -112,13 +152,16 @@ def stack_in_layout(QItems_list,layout_type='v'):
     return layout
 
 class chronological_plotter(QWidget):
+    """
+    GUI-object for displaying data as a time series (days on the bottom x-axis and year-ticks on the top x-axis)
+    """
     def __init__(self,styles={"font-family":"Times New Roman"}):
+        super().__init__()
         crosshair_color="#ff00ff"
         self.right_y_color="k"
         self.right_moving_average_color="r"
         self.left_y_color="b"
         self.left_moving_average_color="g"
-        super().__init__()
         self.figure=PlotWidget()
         self.legend=self.figure.addLegend(labelTextColor=(0,0,0))
         self.styles=styles
@@ -150,7 +193,7 @@ class chronological_plotter(QWidget):
         
         self.left_y_data_picker=QComboBox()
         self.right_y_data_picker=QComboBox()
-        for label in y_data_dict.keys():
+        for label in data_dict.keys():
             self.left_y_data_picker.addItem(label)
             self.right_y_data_picker.addItem(label)
         self.left_y_data_picker.addItem('')
@@ -158,16 +201,12 @@ class chronological_plotter(QWidget):
         picker_layout=stack_in_layout([('stretch',1),QLabel('Left y-axis:'),self.left_y_data_picker,('stretch',1),
                                        QLabel('Right y-axis:'),self.right_y_data_picker,('stretch',1)],'h')
         picker_layout.setSpacing(2)
-        
-        topTicks=[] 
-        yCounter=1
+
         for i,dStr in enumerate(dates_formatted):
             y,m,d=dStr.split(',')
             if m+d=='0101':
-                yCounter+=1
                 self.left_y_axis_graph.addItem(InfiniteLine(pos=i,angle=90,pen=pen2))
-        topTicks=year_rows
-        self.figure.getAxis('top').setTicks([topTicks,[]])
+        self.figure.getAxis('top').setTicks([year_rows,[]])
         self.figure.getAxis('right').setTicks('')
         self.figure.setBackground(self.palette().color(QPalette.ColorRole.Window))
 
@@ -215,63 +254,65 @@ class chronological_plotter(QWidget):
         #the 1st added item is set to current, change to update moving averages and then change back
         self.left_y_data_picker.setCurrentIndex(1)
         self.left_y_data_picker.setCurrentIndex(0)
-        self.right_y_data_picker.setCurrentIndex(len(y_data_dict))
-        self.startIndex=0
-        self.endIndex=len(dates_formatted)
+        self.right_y_data_picker.setCurrentIndex(len(data_dict))
+        self.start_index=0
+        self.end_index=len(dates_formatted)
     def update_views(self):
+        """
+        Function for updating the scaling of the right y-axis, required for proper appearance
+        """
         self.right_y_axis_graph.setGeometry(self.left_y_axis_graph.sceneBoundingRect())
         self.right_y_axis_graph.linkedViewChanged(self.left_y_axis_graph, self.right_y_axis_graph.XAxis)
-    def updateMovAg(self,movAvgWindow):
-        self.moving_avg_window=movAvgWindow
+    def update_moving_average(self,moving_average_window):
+        self.moving_avg_window=moving_average_window
         for key in moving_average_dict.keys():
-            moving_average_dict[key]=movingAvg(y_data_dict[key],self.moving_avg_window)
+            moving_average_dict[key]=moving_average(data_dict[key],self.moving_avg_window)
         for _,y_dict in self.left_right_dict.items():
             if y_dict['y_data_label']:
                 if y_dict['moving_average_plot']:
                     y_dict['viewbox'].removeItem(y_dict['moving_average_plot'])
                     self.legend.removeItem(y_dict['moving_average_plot'])
-                movAvg=moving_average_dict[y_dict['y_data_label']]
-                y_dict['moving_average_plot']=PlotCurveItem(movAvg,pen=mkPen(color=y_dict['moving_average_color'],width=2))
+                moving_average_values=moving_average_dict[y_dict['y_data_label']]
+                y_dict['moving_average_plot']=PlotCurveItem(moving_average_values,pen=mkPen(color=y_dict['moving_average_color'],width=2))
                 y_dict['viewbox'].addItem(y_dict['moving_average_plot'])
                 self.legend.addItem(y_dict['moving_average_plot'],name=f"{self.moving_avg_window}-day avg.")
     def update_crosshair(self, e):
         pos = e[0]
         if self.figure.sceneBoundingRect().contains(pos):
-            mousePoint = self.figure.getPlotItem().vb.mapSceneToView(pos)
-            mPx=mousePoint.x()
-            if mPx<0:
-                mPx=0
-            elif mPx>self.xMax:
-                mPx=self.xMax
+            cursor_position = self.figure.getPlotItem().vb.mapSceneToView(pos)
+            x_position=cursor_position.x()
+            if x_position<0:
+                x_position=0
+            elif x_position>self.xMax:
+                x_position=self.xMax
             for data_picker in [self.left_y_data_picker,self.right_y_data_picker]:
                 y_dict=self.left_right_dict[data_picker]
                 if y_dict['y_data_label']:
-                    y_dict['crosshair_vertical_line'].setPos(mPx)
+                    y_dict['crosshair_vertical_line'].setPos(x_position)
                     y_dict['crosshair_data_point'].clear()
-                    xIndex=round(mPx)
-                    y_value=y_data_dict[y_dict['y_data_label']][xIndex]
+                    x_index=round(x_position)
+                    y_value=data_dict[y_dict['y_data_label']][x_index]
                     if not np.isnan(y_value):
-                        y_dict['crosshair_data_point'].addPoints([mPx], [y_value])
+                        y_dict['crosshair_data_point'].addPoints([x_position], [y_value])
             y_str=''
-            if 'xIndex' in locals():
-                for label,y_data in y_data_dict.items():
+            if 'x_index' in locals():
+                for label,y_data in data_dict.items():
                     y_metric,y_unit=label.split(' [')
-                    y_metric_moving_avg=moving_average_dict[label][xIndex]
-                    if not np.isnan(y_data[xIndex]):
-                        y_str+=f"{y_metric}: {np.round(y_data[xIndex],decimals=1)} (Avg. {np.round(y_metric_moving_avg,decimals=1)}) {y_unit.strip(']')}\n"
+                    y_metric_moving_avg=moving_average_dict[label][x_index]
+                    if not np.isnan(y_data[x_index]):
+                        y_str+=f"{y_metric}: {np.round(y_data[x_index],decimals=1)} (Avg. {np.round(y_metric_moving_avg,decimals=1)}) {y_unit.strip(']')}\n"
                     else:
                         y_str+=f"{y_metric}:\n"
             info_str=''
             for label,info in info_columns_dict.items():
-                info_str+=f"\n{label}:\n{info[xIndex]}\n"
-            self.infoLabel.setText(f"{dates_formatted[xIndex]}\n{y_str}{info_str}")
-
-    def updateStart(self,startStr):
-        self.startIndex=dates_formatted.index(startStr)
-        self.figure.setXRange(self.startIndex,self.endIndex,padding=0.002)
-    def updateEnd(self,endStr):
-        self.endIndex=dates_formatted.index(endStr)
-        self.figure.setXRange(self.startIndex,self.endIndex,padding=0.002)
+                info_str+=f"\n{label}:\n{info[x_index]}\n"
+            self.infoLabel.setText(f"{dates_formatted[x_index]}\n{y_str}{info_str}")
+    def update_start(self,startStr):
+        self.start_index=dates_formatted.index(startStr)
+        self.figure.setXRange(self.start_index,self.end_index,padding=0.002)
+    def update_end(self,endStr):
+        self.end_index=dates_formatted.index(endStr)
+        self.figure.setXRange(self.start_index,self.end_index,padding=0.002)
     def change_y_data(self,text):
         y_dict=self.left_right_dict[self.sender()]
         if y_dict['y_data_plot']:
@@ -281,13 +322,13 @@ class chronological_plotter(QWidget):
             y_dict['crosshair_vertical_line'].show()
             y_dict['crosshair_data_point'].show()
             y_dict['y_data_label']=text
-            y_dict['y_data_plot']=PlotCurveItem(y_data_dict[y_dict['y_data_label']],pen=y_dict['y_color'])
+            y_dict['y_data_plot']=PlotCurveItem(data_dict[y_dict['y_data_label']],pen=y_dict['y_color'])
             self.legend.addItem(y_dict['y_data_plot'],name='Data')
             y_dict['viewbox'].addItem(y_dict['y_data_plot'])
-            self.updateMovAg(self.moving_avg_window)
+            self.update_moving_average(self.moving_avg_window)
             self.figure.getAxis(y_dict['axis']).setTicks(None)
             self.figure.getAxis(y_dict['axis']).setLabel(text,**self.styles)
-            y_dict['viewbox'].setYRange(np.nanmin(y_data_dict[y_dict['y_data_label']])*.95,np.nanmax(y_data_dict[y_dict['y_data_label']])*1.05)
+            y_dict['viewbox'].setYRange(np.nanmin(data_dict[y_dict['y_data_label']])*.95,np.nanmax(data_dict[y_dict['y_data_label']])*1.05)
         else:
             if y_dict['moving_average_plot']:
                 y_dict['viewbox'].removeItem(y_dict['moving_average_plot'])
@@ -300,7 +341,10 @@ class chronological_plotter(QWidget):
             self.figure.getAxis(y_dict['axis']).setLabel('',**self.styles)
             self.figure.getAxis(y_dict['axis']).setTicks('')
 
-class dataCOMP(QWidget):
+class data_analysis_plotter(QWidget):
+    """
+    GUI-object for displaying a scatter plot with user-defined data on the x- and y-axes
+    """
     def __init__(self,styles={"font-family":"Times New Roman"}):
         super().__init__()
         self.figure=PlotWidget()
@@ -323,7 +367,7 @@ class dataCOMP(QWidget):
         self.x_data_picker=QComboBox()
         self.data_formula_map_dict={}
         formula_info_str=''
-        for i,label in enumerate(list(y_data_dict.keys())+['Days',self.x_formula_str]):
+        for i,label in enumerate(list(data_dict.keys())+['Days',self.x_formula_str]):
             if label!=self.x_formula_str:
                 self.data_formula_map_dict[chr(65+i)]=label
                 formula_info_str+=f"{chr(65+i)}: {label}\n"
@@ -387,7 +431,7 @@ class dataCOMP(QWidget):
         if self.sender()==self.moving_average_indicator:
             self.scatter_dict['data_dict']=moving_average_dict
         else:
-            self.scatter_dict['data_dict']=y_data_dict
+            self.scatter_dict['data_dict']=data_dict
         self.plot_data()
     def change_data(self):
         text=self.sender().currentText()
@@ -477,7 +521,6 @@ class dataCOMP(QWidget):
                         result+=operand
                 return result,iter
             full_data_set,_=recursive_parse(data_label)
-
         return full_data_set[self.scatter_dict['start_index']:self.scatter_dict['end_index']+1]
     def plot_data(self):
         try:
@@ -489,58 +532,57 @@ class dataCOMP(QWidget):
             self.colors = self.cmap.mapToQColor(np.linspace(0, 1, len(x_data)))
             self.scatter = ScatterPlotItem(x=x_data, y=self.get_data('y_label'), pen=None, brush=self.colors, size=10)
             self.figure.plotItem.vb.addItem(self.scatter)
-class mainWindow(QWidget):
+class main_window(QWidget):
     def __init__(self,styles={"font-family":"Times New Roman"}):
         super().__init__()
         self.setWindowTitle('Body-metric log visualizer')
         self.setWindowIcon(QIcon('scale.png'))
-        self.startLineEdit=QLineEdit()
-        self.endLineEdit=QLineEdit()
-        self.movAvgWindowLineEdit=QLineEdit()
-        self.movAvgWindowLineEdit.setText('7')
-        ctrlLayout=stack_in_layout([QLabel('From, Year,Month,Day:'),self.startLineEdit,
-                                    QLabel('Until, Year,Month,Day:'),self.endLineEdit,
-                                    QLabel('Avg. window:'),self.movAvgWindowLineEdit],'h')
+        self.start_line_edit=QLineEdit()
+        self.end_line_edit=QLineEdit()
+        self.moving_avgerage_window_line_edit=QLineEdit()
+        self.moving_avgerage_window_line_edit.setText('7')
+        ctrlLayout=stack_in_layout([QLabel('From, Year,Month,Day:'),self.start_line_edit,
+                                    QLabel('Until, Year,Month,Day:'),self.end_line_edit,
+                                    QLabel('Avg. window:'),self.moving_avgerage_window_line_edit],'h')
         self.history_plot_widget=chronological_plotter(styles)
-        tabWidget=QTabWidget()
-        tabWidget.addTab(self.history_plot_widget,'History')
-        self.data_comparison_plot=dataCOMP()
-        tabWidget.addTab(self.data_comparison_plot,'Comparison')
+        tab_widget=QTabWidget()
+        tab_widget.addTab(self.history_plot_widget,'History')
+        self.data_comparison_plot=data_analysis_plotter()
+        tab_widget.addTab(self.data_comparison_plot,'Comparison')
 
-        for i in range(tabWidget.count()):
-            tab_page = tabWidget.widget(i)   # or the QWidget you created earlier
+        for i in range(tab_widget.count()):
+            tab_page = tab_widget.widget(i)
             pal = tab_page.palette()
             pal.setColor(QPalette.ColorRole.Window, self.history_plot_widget.palette().color(QPalette.ColorRole.Window))
             tab_page.setAutoFillBackground(True)   # important so palette is used
             tab_page.setPalette(pal)
             tab_page.update()
 
-        layout=stack_in_layout([tabWidget,ctrlLayout])
+        layout=stack_in_layout([tab_widget,ctrlLayout])
         self.setLayout(layout)
 
-        self.startLineEdit.returnPressed.connect(self.updateStart)
-        self.endLineEdit.returnPressed.connect(self.updateEnd)
-        self.movAvgWindowLineEdit.returnPressed.connect(self.updateMovAg)
-        self.startLineEdit.setText(dates_formatted[0])
-        self.endLineEdit.setText(dates_formatted[-1])    
-        self.startLineEdit.returnPressed.emit()
-        self.endLineEdit.returnPressed.emit()
-    def updateStart(self):
-        startStr=self.startLineEdit.text()
-        self.history_plot_widget.updateStart(startStr)
+        self.start_line_edit.returnPressed.connect(self.update_start)
+        self.end_line_edit.returnPressed.connect(self.update_end)
+        self.moving_avgerage_window_line_edit.returnPressed.connect(self.update_moving_average)
+        self.start_line_edit.setText(dates_formatted[0])
+        self.end_line_edit.setText(dates_formatted[-1])    
+        self.start_line_edit.returnPressed.emit()
+        self.end_line_edit.returnPressed.emit()
+    def update_start(self):
+        startStr=self.start_line_edit.text()
+        self.history_plot_widget.update_start(startStr)
         self.data_comparison_plot.set_start_index(startStr)
-    def updateEnd(self):
-        endStr=self.endLineEdit.text()
-        self.history_plot_widget.updateEnd(endStr)
+    def update_end(self):
+        endStr=self.end_line_edit.text()
+        self.history_plot_widget.update_end(endStr)
         self.data_comparison_plot.set_end_index(endStr)
-    def updateMovAg(self):
-        self.history_plot_widget.updateMovAg(int(self.movAvgWindowLineEdit.text()))
+    def update_moving_average(self):
+        self.history_plot_widget.update_moving_average(int(self.moving_avgerage_window_line_edit.text()))
         self.data_comparison_plot.plot_data()
-
 
 if __name__=='__main__':
     app=QApplication([])
     app.setFont(QFont('Times New Roman'))
-    gui=mainWindow()
+    gui=main_window()
     gui.show()
     app.exec()

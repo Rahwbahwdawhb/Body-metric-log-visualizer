@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLayout
+from PyQt6.QtWidgets import QWidget, QHBoxLayout, QVBoxLayout, QLayout, QLabel
 from pyqtgraph import PlotWidget
 def stack_in_layout(QItems_list,layout_type='v'):
     """
@@ -44,3 +44,8 @@ def get_prepared_plot_widget(palette=None):
     if palette:
         figure.setBackground(palette)
     return figure
+
+def QLabel_applied_stylesheet(text,stylesheet={}):
+    temp=QLabel(text)
+    temp.setStyleSheet(stylesheet)
+    return temp

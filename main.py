@@ -2,8 +2,8 @@
 #verify recursive parsing with example data that's easier to check
 #same vertical size of self.x_picker_show, self.y_formula and self.x_data_picker
 #stop lower outline of self.y_formula from vanishing when hovering above it
-#option to display data as lines or dots for both views
 #display formula instructions when hovering over some icon that appears when clicking formula
+#fix bug that selects text in a different widget when choosing formula
 
 import numpy as np
 from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QGridLayout, QLineEdit, QLabel, QComboBox, QTabWidget, QRadioButton, QPushButton
@@ -11,7 +11,7 @@ from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QPalette, QIcon
 from pyqtgraph import mkPen, InfiniteLine, SignalProxy, ScatterPlotItem, ViewBox, PlotCurveItem, ScatterPlotItem, ColorMap
 
-from frontend_utils import stack_in_layout, get_prepared_plot_widget
+from frontend_utils import stack_in_layout, get_prepared_plot_widget, QLabel_applied_stylesheet
 from backend import get_data, get_mock_data, moving_average, recursive_parse
 
 class chronological_plotter(QWidget):
@@ -21,6 +21,7 @@ class chronological_plotter(QWidget):
     def __init__(self,dates_formatted,data_dict,moving_average_dict,info_columns_dict,styles={"font-family":"Times New Roman"}):
         super().__init__()
         self.dates_formatted=dates_formatted
+        self.days=np.linspace(0,len(self.dates_formatted)-1,len(self.dates_formatted))
         self.data_dict=data_dict
         self.moving_average_dict=moving_average_dict
         self.info_columns_dict=info_columns_dict
@@ -57,8 +58,14 @@ class chronological_plotter(QWidget):
             self.right_y_data_picker.addItem(label)
         self.left_y_data_picker.addItem('')
         self.right_y_data_picker.addItem('')
+        self.dots_rb=QRadioButton('Dots')
+        self.dots_rb.clicked.connect(self.change_plot_type)
+        self.lines_rb=QRadioButton('Lines')
+        self.lines_rb.clicked.connect(self.change_plot_type)
+        dots_lines_layout=stack_in_layout([self.dots_rb,self.lines_rb])
         picker_layout=stack_in_layout([('stretch',1),QLabel('Left y-axis:'),self.left_y_data_picker,('stretch',1),
-                                       QLabel('Right y-axis:'),self.right_y_data_picker,('stretch',1)],'h')
+                                       QLabel('Right y-axis:'),self.right_y_data_picker,('stretch',1),
+                                       QLabel('Show data as: '),dots_lines_layout,('stretch',1)],'h')
         picker_layout.setSpacing(2)
         year_rows=[]
         for i,dStr in enumerate(self.dates_formatted):
@@ -107,6 +114,7 @@ class chronological_plotter(QWidget):
                                                        'moving_average_plot':None,
                                                        'crosshair_data_point':self.dataPointCircle_right,
                                                        'crosshair_vertical_line':self.crosshair_v_right}}
+        self.lines_rb.click()
         self.left_y_data_picker.currentTextChanged.connect(self.change_y_data)
         self.right_y_data_picker.currentTextChanged.connect(self.change_y_data)
         #the 1st added item is set to current, change to update moving averages and then change back
@@ -131,7 +139,7 @@ class chronological_plotter(QWidget):
                     y_dict['viewbox'].removeItem(y_dict['moving_average_plot'])
                     self.legend.removeItem(y_dict['moving_average_plot'])
                 moving_average_values=self.moving_average_dict[y_dict['y_data_label']]
-                y_dict['moving_average_plot']=PlotCurveItem(moving_average_values,pen=mkPen(color=y_dict['moving_average_color'],width=2))
+                y_dict['moving_average_plot']=self.plot_type(self.days,moving_average_values,pen=mkPen(color=y_dict['moving_average_color'],width=2),brush=y_dict['moving_average_color'])
                 y_dict['viewbox'].addItem(y_dict['moving_average_plot'])
                 self.legend.addItem(y_dict['moving_average_plot'],name=f"{self.moving_avg_window}-day avg.")
     def update_crosshair(self, e):
@@ -171,8 +179,17 @@ class chronological_plotter(QWidget):
     def update_end(self,endStr):
         self.end_index=self.dates_formatted.index(endStr)
         self.figure.setXRange(self.start_index,self.end_index,padding=0.002)
-    def change_y_data(self,text):
-        y_dict=self.left_right_dict[self.sender()]
+    def change_plot_type(self):
+        if self.sender()==self.dots_rb:
+            self.plot_type=ScatterPlotItem
+        else:
+            self.plot_type=PlotCurveItem
+        for _,y_dict in self.left_right_dict.items():
+            if y_dict['y_data_label']:
+                self.change_y_data(y_dict['y_data_label'],y_dict)
+    def change_y_data(self,text,y_dict=None):
+        if not y_dict:
+            y_dict=self.left_right_dict[self.sender()]
         if y_dict['y_data_plot']:
             y_dict['viewbox'].removeItem(y_dict['y_data_plot'])
             self.legend.removeItem(y_dict['y_data_plot'])
@@ -180,7 +197,7 @@ class chronological_plotter(QWidget):
             y_dict['crosshair_vertical_line'].show()
             y_dict['crosshair_data_point'].show()
             y_dict['y_data_label']=text
-            y_dict['y_data_plot']=PlotCurveItem(self.data_dict[y_dict['y_data_label']],pen=y_dict['y_color'])
+            y_dict['y_data_plot']=self.plot_type(self.days,self.data_dict[y_dict['y_data_label']],pen=mkPen(color=y_dict['y_color']),brush=y_dict['y_color'])
             self.legend.addItem(y_dict['y_data_plot'],name='Data')
             y_dict['viewbox'].addItem(y_dict['y_data_plot'])
             self.update_moving_average(self.moving_avg_window)
@@ -252,9 +269,17 @@ class data_analysis_plotter(QWidget):
 
         self.moving_average_indicator=QRadioButton('Moving average')
         self.data_indicator=QRadioButton('Data')
-        radio_button_layout=stack_in_layout([self.data_indicator,self.moving_average_indicator])
-        picker_layout.addLayout(radio_button_layout,0,2,0,2)
-        bottom_layout=stack_in_layout([QLabel(formula_info_str),picker_layout],'h')
+        data_ma_layout=stack_in_layout([QLabel_applied_stylesheet('Data set',"text-decoration: underline;"),self.data_indicator,self.moving_average_indicator])
+        data_ma_widget=QWidget()
+        data_ma_widget.setLayout(data_ma_layout)
+        self.dots_rb=QRadioButton('Dots')
+        self.dots_rb.clicked.connect(self.change_plot_type)
+        self.lines_rb=QRadioButton('Lines')
+        self.lines_rb.clicked.connect(self.change_plot_type)
+        dots_lines_layout=stack_in_layout([QLabel_applied_stylesheet('Show data as',"text-decoration: underline;"),self.dots_rb,self.lines_rb])
+        dots_lines_widget=QWidget()
+        dots_lines_widget.setLayout(dots_lines_layout)
+        bottom_layout=stack_in_layout([data_ma_widget,dots_lines_widget,stack_in_layout([('stretch',3),picker_layout,('stretch',1)])],'h')
         layout=stack_in_layout([self.figure,bottom_layout])
         self.setLayout(layout)
 
@@ -269,6 +294,7 @@ class data_analysis_plotter(QWidget):
         self.x_formula.returnPressed.connect(self.enter_formula)
         self.y_picker_show.pressed.connect(self.show_picker)
         self.x_picker_show.pressed.connect(self.show_picker)
+        self.dots_rb.click()
     def show_picker(self):
         if self.sender()==self.y_picker_show:
             self.y_data_picker.show()
@@ -331,16 +357,25 @@ class data_analysis_plotter(QWidget):
         if evaluate_formula:
             full_data_set,_=recursive_parse(data_label,self.data_formula_map_dict,self.scatter_dict['data_plot_dict'],self.days)
         return full_data_set[self.scatter_dict['start_index']:self.scatter_dict['end_index']+1]
+    def change_plot_type(self):
+        if self.sender()==self.dots_rb:
+            self.scatter_dict['plot_type']='dots'
+        else:
+            self.scatter_dict['plot_type']='lines'
+        self.plot_data()
     def plot_data(self):
         try:
-            self.figure.plotItem.vb.removeItem(self.scatter)
+            self.figure.plotItem.vb.removeItem(self.plot)
         except:
             pass
         if self.scatter_dict['x_label'] is not None and self.scatter_dict['y_label'] is not None:
             x_data=self.get_data('x_label')
-            self.colors = self.cmap.mapToQColor(np.linspace(0, 1, len(x_data)))
-            self.scatter = ScatterPlotItem(x=x_data, y=self.get_data('y_label'), pen=None, brush=self.colors, size=10)
-            self.figure.plotItem.vb.addItem(self.scatter)
+            if self.scatter_dict['plot_type']=='dots':
+                self.colors = self.cmap.mapToQColor(np.linspace(0, 1, len(x_data)))
+                self.plot = ScatterPlotItem(x=x_data, y=self.get_data('y_label'), pen=None, brush=self.colors, size=10)
+            else:
+                self.plot = PlotCurveItem(x=x_data, y=self.get_data('y_label'), pen='b', size=2)
+            self.figure.plotItem.vb.addItem(self.plot)
 class main_window(QWidget):
     def __init__(self,dates_formatted,data_dict,moving_average_dict,info_columns_dict,styles={"font-family":"Times New Roman"}):
         super().__init__()

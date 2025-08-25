@@ -152,7 +152,7 @@ def recursive_parse(str_to_parse,data_formula_map_dict,data_dict,days):
         ch=str_to_parse[iter]
         iter+=1
         if ch=='(':
-            rec_result,rec_iter=recursive_parse(str_to_parse[iter:],data_formula_map_dict,data_dict)
+            rec_result,rec_iter=recursive_parse(str_to_parse[iter:],data_formula_map_dict,data_dict,days)
             to_evaluate.append(rec_result)
             iter+=rec_iter
         elif ch==')':

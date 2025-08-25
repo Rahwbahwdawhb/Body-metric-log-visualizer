@@ -9,7 +9,7 @@ import numpy as np
 from PyQt6.QtWidgets import QApplication, QWidget, QVBoxLayout, QGridLayout, QLineEdit, QLabel, QComboBox, QTabWidget, QRadioButton, QPushButton
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QPalette, QIcon
-from pyqtgraph import mkPen, InfiniteLine, SignalProxy, ScatterPlotItem, ViewBox, PlotCurveItem, ScatterPlotItem, ColorMap
+from pyqtgraph import mkPen, mkColor, InfiniteLine, SignalProxy, ScatterPlotItem, ViewBox, PlotCurveItem, ScatterPlotItem, ColorMap
 
 from frontend_utils import stack_in_layout, get_prepared_plot_widget, QLabel_applied_stylesheet
 from backend import get_data, get_mock_data, moving_average, recursive_parse
@@ -365,7 +365,11 @@ class data_analysis_plotter(QWidget):
         self.plot_data()
     def plot_data(self):
         try:
-            self.figure.plotItem.vb.removeItem(self.plot)
+            if isinstance(self.plot,list):
+                for p in self.plot:
+                    self.figure.plotItem.vb.removeItem(p)
+            else:
+                self.figure.plotItem.vb.removeItem(self.plot)
         except:
             pass
         if self.scatter_dict['x_label'] is not None and self.scatter_dict['y_label'] is not None:
@@ -373,9 +377,25 @@ class data_analysis_plotter(QWidget):
             if self.scatter_dict['plot_type']=='dots':
                 self.colors = self.cmap.mapToQColor(np.linspace(0, 1, len(x_data)))
                 self.plot = ScatterPlotItem(x=x_data, y=self.get_data('y_label'), pen=None, brush=self.colors, size=10)
+                self.figure.plotItem.vb.addItem(self.plot)
             else:
-                self.plot = PlotCurveItem(x=x_data, y=self.get_data('y_label'), pen='b', size=2)
-            self.figure.plotItem.vb.addItem(self.plot)
+                y_data=self.get_data('y_label')
+                N_y=len(y_data)
+                N=min([N_y,100])
+                step=N_y//N
+                colors=self.cmap.map(np.linspace(0.0, 1.0, len(y_data)))[::step]
+                colors=np.vstack((colors,colors[-1]))
+                self.plot=[]
+                i_start=0
+                counter=0
+                while i_start<N_y:
+                    pen = mkPen(color=colors[counter], width=3)
+                    i_stop=min([i_start+step,N_y-1])
+                    temp=PlotCurveItem(x=x_data[i_start:i_stop+1],y=y_data[i_start:i_stop+1], pen=pen)
+                    i_start=i_stop+1
+                    self.plot.append(temp)
+                    self.figure.plotItem.vb.addItem(temp)
+                    counter+=1
 class main_window(QWidget):
     def __init__(self,dates_formatted,data_dict,moving_average_dict,info_columns_dict,styles={"font-family":"Times New Roman"}):
         super().__init__()
